@@ -215,7 +215,7 @@ func (m *Mount) PulseMove(dir string, dur int) error {
 // DAT_3fc95864/60) with only float multiply/add for velocity ramping — no sin/cos,
 // no coordinate frame transform.
 //
-// The firmware's "RA/Dec" axis labels are inherited from the AM5 equatorial codebase;
+// The firmware's "RA/Dec" axis labels are an artefact of the equatorial mount codebase it was derived from;
 // axis 1 is the physical azimuth motor and axis 2 is the physical elevation motor.
 // Coordinate math (spherical trig using sin/cos of latitude) is used only by the
 // GoTo planner (:MS#) and the autonomous sidereal/solar/lunar tracking loop (:TQ#/:TS#/:TL#).

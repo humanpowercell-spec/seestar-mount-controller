@@ -229,20 +229,20 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 
 ## CLI tool
 
-`am_ctrl` is a thin CLI wrapper over the library for manual control and scripting.
+`seestar-ctrl` is a thin CLI wrapper over the library for manual control and scripting.
 
 ```bash
-go install github.com/humanpowercell-spec/seestar-mount-controller-/cmd/am_ctrl@latest
+go install github.com/humanpowercell-spec/seestar-mount-controller-/cmd/seestar-ctrl@latest
 
-am_ctrl home
-am_ctrl gotowait 18.6156 38.78 0.1
-am_ctrl trackrate 0.5 0.2
-am_ctrl stop
-am_ctrl radec
-am_ctrl raw ':GU#'
+seestar-ctrl home
+seestar-ctrl gotowait 18.6156 38.78 0.1
+seestar-ctrl trackrate 0.5 0.2
+seestar-ctrl stop
+seestar-ctrl radec
+seestar-ctrl raw ':GU#'
 ```
 
-Run `am_ctrl` with no arguments for the full command list.
+Run `seestar-ctrl` with no arguments for the full command list.
 
 ---
 

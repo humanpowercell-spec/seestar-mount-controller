@@ -104,7 +104,7 @@ func main() {
 		fmt.Println("sync sent")
 
 	case "reset":
-		fmt.Fprintln(os.Stderr, "am_ctrl: sending :AR# — mount will reboot")
+		fmt.Fprintln(os.Stderr, "seestar-ctrl: sending :AR# — mount will reboot")
 		check(m.Reset())
 
 	case "goto":
@@ -237,7 +237,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `am_ctrl [--dev /dev/ttyS3] <command> [args]
+	fmt.Fprintf(os.Stderr, `seestar-ctrl [--dev /dev/ttyS3] <command> [args]
 
   slew <e|w|n|s> <1-9>         Preset-rate slew
   slewrate <e|w|n|s> <deg/s>   Variable-rate continuous slew (requires firmware >= V1.1.9)
@@ -288,7 +288,7 @@ func requireArgs(args []string, n int, usage string) {
 }
 
 func fatalf(f string, a ...any) {
-	fmt.Fprintf(os.Stderr, "am_ctrl: "+f+"\n", a...)
+	fmt.Fprintf(os.Stderr, "seestar-ctrl: "+f+"\n", a...)
 	os.Exit(1)
 }
 
