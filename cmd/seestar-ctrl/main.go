@@ -24,6 +24,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	// probe does not open the serial port.
+	if args[0] == "probe" {
+		p := mount.ProbeHardware(*dev)
+		fmt.Printf("tty          %v  (%s)\n", p.TTY, *dev)
+		fmt.Printf("zwo_config   %v\n", p.ZWOConfig)
+		fmt.Printf("zwo_running  %v\n", p.ZWORunning)
+		fmt.Printf("alpaca       %v\n", p.Alpaca)
+		if p.Detected() {
+			fmt.Println("detected     yes")
+		} else {
+			fmt.Println("detected     no")
+			os.Exit(1)
+		}
+		return
+	}
+
 	m, err := mount.Open(*dev)
 	if err != nil {
 		fatalf("open: %v", err)
@@ -239,6 +255,7 @@ func main() {
 func usage() {
 	fmt.Fprintf(os.Stderr, `seestar-ctrl [--dev /dev/ttyS3] <command> [args]
 
+  probe                         Check for Seestar S30 hardware indicators (no port needed)
   slew <e|w|n|s> <1-9>         Preset-rate slew
   slewrate <e|w|n|s> <deg/s>   Variable-rate continuous slew (requires firmware >= V1.1.9)
   setrate <ra|dec> <deg/s>     Set per-axis rate for pulsemove (ZWO :Rv extension)
