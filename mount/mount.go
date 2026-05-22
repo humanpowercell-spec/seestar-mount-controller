@@ -410,7 +410,10 @@ func (m *Mount) WaitGoTo(ctx context.Context, toleranceDeg float64) error {
 			if err != nil {
 				continue
 			}
-			dRA := (ra - targetRA) * 15 // convert hours to degrees
+			// Great-circle distance: RA component is scaled by cos(Dec) so that
+			// 1h of RA near the pole doesn't count as 15° of angular separation.
+			cosDecTarget := math.Cos(targetDec * math.Pi / 180)
+			dRA := (ra - targetRA) * 15 * cosDecTarget
 			dDec := dec - targetDec
 			dist := math.Sqrt(dRA*dRA + dDec*dDec)
 			if dist <= toleranceDeg {
