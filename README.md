@@ -18,6 +18,34 @@ go get github.com/humanpowercell-spec/seestar-mount-controller-@latest
 
 ---
 
+## Hardware detection
+
+`ProbeHardware` checks whether the current process is running on Seestar S30
+hardware without opening the serial port. Use it to gate hardware control in a
+program that may run on non-Seestar hosts.
+
+```go
+p := mount.ProbeHardware("") // "" checks DefaultDev
+
+if !p.Detected() {
+    log.Println("not running on Seestar hardware, skipping mount control")
+    return
+}
+
+// p.TTY        — /dev/ttyS3 exists as a character device
+// p.ZWOConfig  — /home/pi/ASIAIR/config present
+// p.ZWORunning — zwoair_guider or zwoair_imager found in /proc
+// p.Alpaca     — /etc/zwo/Alpaca directory present
+
+m, err := mount.Open("")
+```
+
+`Detected()` returns true when at least two indicators are present. The
+`ZWORunning` check is the strongest single indicator — it confirms both that
+the ZWO binaries exist and that the OS is actively running them.
+
+---
+
 ## Startup sequence
 
 The firmware boots in home/park mode. You must call `HomeAndWait` before any
@@ -198,6 +226,8 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 
 | Method | Description |
 |--------|-------------|
+| `ProbeHardware(dev string) HardwareProbe` | Check for Seestar S30 environment indicators without opening the port. |
+| `(HardwareProbe).Detected() bool` | True if two or more indicators are present. |
 | `Open(dev string) (*Mount, error)` | Open serial port. Pass `""` for `/dev/ttyS3`. |
 | `Close() error` | Release the port. |
 | `HomeAndWait(ctx) error` | Home, wait for completion, exit home mode. Normal startup call. |
@@ -211,8 +241,8 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 | `StopDec() error` | Stop elevation axis only. |
 | `Slew(dir, speed) error` | Preset-rate slew (1–9). |
 | `SlewRate(dir, degPerSec) error` | Variable-rate continuous slew. |
-| `SetTracking(mode) error` | `"sidereal"`, `"solar"`, or `"lunar"`. |
-| `EnableTracking(bool) error` | Enable / disable autonomous tracking. |
+| `SetTracking(mode) error` | `"sidereal"`, `"solar"`, or `"lunar"`. No-op in normal operating state (see Notes). |
+| `EnableTracking(bool) error` | Enable / disable autonomous tracking. No-op in normal operating state (see Notes). |
 | `RADec() (float64, float64, error)` | Current RA (hours) and Dec (degrees). |
 | `AltAz() (float64, float64, error)` | Current altitude and azimuth (degrees). |
 | `EncoderPos() (int32, int32, error)` | Raw motor encoder counts (az, el). |
@@ -234,6 +264,7 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 ```bash
 go install github.com/humanpowercell-spec/seestar-mount-controller-/cmd/seestar-ctrl@latest
 
+seestar-ctrl probe               # check hardware indicators; exits 1 if not detected
 seestar-ctrl home
 seestar-ctrl gotowait 18.6156 38.78 0.1
 seestar-ctrl trackrate 0.5 0.2
@@ -242,13 +273,20 @@ seestar-ctrl radec
 seestar-ctrl raw ':GU#'
 ```
 
+`probe` is useful as a guard in shell scripts:
+
+```bash
+seestar-ctrl probe && seestar-ctrl home
+```
+
 Run `seestar-ctrl` with no arguments for the full command list.
 
 ---
 
 ## Notes
 
-- `Stop it` before running these programs if `zwoair_guider` is running on the telescope — both processes would otherwise fight over `/dev/ttyS3`.
+- Stop `zwoair_guider` before running these programs — both processes would otherwise fight over `/dev/ttyS3`. Use `ProbeHardware` to detect whether it is running (`ZWORunning` field) before attempting `Open`.
 - The firmware enforces a **5 ms minimum reply latency** (`command_task` sleep) and a **50-byte reply cap**. Neither affects `TrackRate` or `Track`, which send fire-and-forget commands.
 - Rate units: the firmware uses *sidereal multiples* (1 unit = 15 arcsec/s). The library converts from deg/s transparently. Maximum is 6 deg/s (1440 sidereal multiples) per axis.
 - `TrackRate` is concurrency-safe. A position-polling goroutine and a tracking goroutine can share the same `*Mount`.
+- **`SetTracking` and `EnableTracking` are no-ops in normal operating state.** After `HomeAndWait`, the firmware intercepts all `T`-prefix LX200 commands and silently discards them (firmware state 3, `FUN_42007394`). To stop autonomous tracking use `Stop()` or `TrackRate(0, 0)` — both clear the tracking-enable bits directly via the stop command path.
