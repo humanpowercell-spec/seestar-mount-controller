@@ -492,6 +492,28 @@ func (m *Mount) AltAz() (alt, az float64, err error) {
 	return alt, az, nil
 }
 
+// GetLocation returns the observer's geographic coordinates stored in the mount.
+// Uses LX200 :Gt# (latitude) and :Gg# (longitude).
+// Longitude follows the LX200 convention: West is positive; callers should
+// negate to convert to East-positive (WGS-84).
+func (m *Mount) GetLocation() (lat, lonWest float64, err error) {
+	latStr, err := m.Cmd(":Gt#")
+	if err != nil {
+		return 0, 0, fmt.Errorf("Gt: %w", err)
+	}
+	lonStr, err := m.Cmd(":Gg#")
+	if err != nil {
+		return 0, 0, fmt.Errorf("Gg: %w", err)
+	}
+	if lat, err = parseLX200Angle(latStr); err != nil {
+		return 0, 0, fmt.Errorf("parse lat %q: %w", latStr, err)
+	}
+	if lonWest, err = parseLX200Angle(lonStr); err != nil {
+		return 0, 0, fmt.Errorf("parse lon %q: %w", lonStr, err)
+	}
+	return lat, lonWest, nil
+}
+
 // EncoderPos reads the raw motor encoder counts from :GY#.
 // Returns two 5-digit signed integers (az, el) that increment with each motor step.
 // Useful for sub-arcsecond closed-loop correction in a tracking loop.
