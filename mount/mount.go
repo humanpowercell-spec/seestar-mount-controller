@@ -554,8 +554,55 @@ func (m *Mount) SetLocation(lat, lon float64) error {
 	return m.cmdNoReply(fmt.Sprintf(":SMGE%.6f&%.6f#", lat, lon))
 }
 
+// GetClock reads the mount's internal local time (:GL#/:GC#) and its current
+// sidereal time (:GS#). The local time is returned as a time.Time stamped UTC
+// (no timezone conversion — it reflects whatever the firmware's RTC stores).
+// siderealHours is the LST in decimal hours as reported by the firmware.
+// Comparing siderealHours against the expected GMST+longitude is the definitive
+// check for LST offset errors caused by a stale :SG# UTC offset.
+func (m *Mount) GetClock() (localTime time.Time, siderealHours float64, err error) {
+	timeStr, err := m.Cmd(":GL#")
+	if err != nil {
+		return time.Time{}, 0, fmt.Errorf("GL: %w", err)
+	}
+	dateStr, err := m.Cmd(":GC#")
+	if err != nil {
+		return time.Time{}, 0, fmt.Errorf("GC: %w", err)
+	}
+	lstStr, err := m.Cmd(":GS#")
+	if err != nil {
+		return time.Time{}, 0, fmt.Errorf("GS: %w", err)
+	}
+
+	var h, min, sec int
+	if _, err := fmt.Sscanf(strings.TrimSpace(timeStr), "%d:%d:%d", &h, &min, &sec); err != nil {
+		return time.Time{}, 0, fmt.Errorf("parse time %q: %w", timeStr, err)
+	}
+	var month, day, year int
+	if _, err := fmt.Sscanf(strings.TrimSpace(dateStr), "%d/%d/%d", &month, &day, &year); err != nil {
+		return time.Time{}, 0, fmt.Errorf("parse date %q: %w", dateStr, err)
+	}
+	if year < 100 {
+		year += 2000
+	}
+	localTime = time.Date(year, time.Month(month), day, h, min, sec, 0, time.UTC)
+
+	lstH, lstM, lstS := 0, 0, 0
+	if _, err := fmt.Sscanf(strings.TrimSpace(lstStr), "%d:%d:%d", &lstH, &lstM, &lstS); err != nil {
+		return localTime, 0, fmt.Errorf("parse LST %q: %w", lstStr, err)
+	}
+	siderealHours = float64(lstH) + float64(lstM)/60 + float64(lstS)/3600
+	return localTime, siderealHours, nil
+}
+
 // SetDateTime syncs the mount's real-time clock to the given UTC time.
+// Sends :SG+00.0# first to zero any stored timezone offset so the firmware
+// treats the following :SL# value as UTC. Without this, a stale offset (e.g.
+// -04:00 for EDT) shifts LST by hours, causing GoTo to aim at the wrong AzAlt.
 func (m *Mount) SetDateTime(t time.Time) error {
+	if err := m.cmdNoReply(":SG+00.0#"); err != nil {
+		return fmt.Errorf("SG: %w", err)
+	}
 	dateCmd := fmt.Sprintf(":SC%02d/%02d/%02d#", int(t.Month()), t.Day(), t.Year()%100)
 	timeCmd := fmt.Sprintf(":SL%02d:%02d:%02d#", t.Hour(), t.Minute(), t.Second())
 	if err := m.cmdNoReply(dateCmd); err != nil {
