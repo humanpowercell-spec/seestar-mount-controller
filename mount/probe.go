@@ -18,6 +18,10 @@ type HardwareProbe struct {
 	ZWORunning bool
 	// Alpaca is true if the ZWO Alpaca server directory exists (/etc/zwo/Alpaca).
 	Alpaca bool
+	// Compass is true if the AK09915 magnetometer IIO chardev exists (DefaultIIODev).
+	// The device is exclusively held by zwoair_imager while running; Compass=true
+	// only means the hardware is present, not that it can be read right now.
+	Compass bool
 }
 
 // Detected returns true if at least two independent indicators are present,
@@ -44,6 +48,7 @@ func ProbeHardware(dev string) HardwareProbe {
 		ZWOConfig:  fileExists("/home/pi/ASIAIR/config"),
 		ZWORunning: zwoRunning(),
 		Alpaca:     dirExists("/etc/zwo/Alpaca"),
+		Compass:    isCharDev(DefaultIIODev),
 	}
 }
 

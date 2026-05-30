@@ -24,19 +24,43 @@ func main() {
 		os.Exit(1)
 	}
 
-	// probe does not open the serial port.
+	// probe and compass do not open the serial port.
 	if args[0] == "probe" {
 		p := mount.ProbeHardware(*dev)
 		fmt.Printf("tty          %v  (%s)\n", p.TTY, *dev)
 		fmt.Printf("zwo_config   %v\n", p.ZWOConfig)
 		fmt.Printf("zwo_running  %v\n", p.ZWORunning)
 		fmt.Printf("alpaca       %v\n", p.Alpaca)
+		fmt.Printf("compass      %v  (%s)\n", p.Compass, mount.DefaultIIODev)
 		if p.Detected() {
 			fmt.Println("detected     yes")
 		} else {
 			fmt.Println("detected     no")
 			os.Exit(1)
 		}
+		return
+	}
+
+	if args[0] == "compass" {
+		compassFlags := flag.NewFlagSet("compass", flag.ExitOnError)
+		n := compassFlags.Int("avg", 1, "number of samples to average")
+		compassFlags.Parse(args[1:]) //nolint:errcheck
+		var r mount.CompassReading
+		var err error
+		if *n > 1 {
+			r, err = mount.AverageCompass(*n)
+		} else {
+			r, err = mount.ReadCompass()
+		}
+		if err != nil {
+			fatalf("compass: %v", err)
+		}
+		caliStr := "uncalibrated"
+		if r.Calibrated {
+			caliStr = "calibrated"
+		}
+		fmt.Printf("Heading: %.1f°  X: %.3f µT  Y: %.3f µT  Z: %.3f µT  [%s]\n",
+			r.Heading, r.X, r.Y, r.Z, caliStr)
 		return
 	}
 
@@ -256,6 +280,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `seestar-ctrl [--dev /dev/ttyS3] <command> [args]
 
   probe                         Check for Seestar S30 hardware indicators (no port needed)
+  compass [--avg N]             Read AK09915 magnetometer heading (stop zwoair_imager first)
   slew <e|w|n|s> <1-9>         Preset-rate slew
   slewrate <e|w|n|s> <deg/s>   Variable-rate continuous slew (requires firmware >= V1.1.9)
   setrate <ra|dec> <deg/s>     Set per-axis rate for pulsemove (ZWO :Rv extension)
