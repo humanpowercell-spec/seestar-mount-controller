@@ -64,6 +64,23 @@ func main() {
 		return
 	}
 
+	if args[0] == "declination" {
+		if len(args) < 3 {
+			fatalf("usage: declination <lat> <lon>")
+		}
+		lat, err := strconv.ParseFloat(args[1], 64)
+		if err != nil {
+			fatalf("lat: %v", err)
+		}
+		lon, err := strconv.ParseFloat(args[2], 64)
+		if err != nil {
+			fatalf("lon: %v", err)
+		}
+		decl := mount.Declination(lat, lon, time.Now())
+		fmt.Printf("Declination: %+.2f°  (WMM2025, positive = magnetic east of true north)\n", decl)
+		return
+	}
+
 	m, err := mount.Open(*dev)
 	if err != nil {
 		fatalf("open: %v", err)
@@ -281,6 +298,7 @@ func usage() {
 
   probe                         Check for Seestar S30 hardware indicators (no port needed)
   compass [--avg N]             Read AK09915 magnetometer heading (stop zwoair_imager first)
+  declination <lat> <lon>       Compute WMM2025 magnetic declination at lat/lon (degrees)
   slew <e|w|n|s> <1-9>         Preset-rate slew
   slewrate <e|w|n|s> <deg/s>   Variable-rate continuous slew (requires firmware >= V1.1.9)
   setrate <ra|dec> <deg/s>     Set per-axis rate for pulsemove (ZWO :Rv extension)
