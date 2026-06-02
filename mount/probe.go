@@ -1,11 +1,81 @@
 package mount
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 )
+
+// ImagerPort is the JSON-RPC port of the ZWO imager process.
+const ImagerPort = "4700"
+
+// ScopeMode represents the Seestar's current operating mode.
+type ScopeMode string
+
+const (
+	ScopeModeAltAz      ScopeMode = "alt_az"
+	ScopeModeEquatorial ScopeMode = "equatorial"
+)
+
+// ImagerMode queries the ZWO imager's JSON-RPC server on port 4700 for the
+// current scope mode. host is the hostname or IP of the Seestar (no port).
+// Returns ScopeModeAltAz or ScopeModeEquatorial on success.
+func ImagerMode(ctx context.Context, host string) (ScopeMode, error) {
+	d := net.Dialer{}
+	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, ImagerPort))
+	if err != nil {
+		return "", fmt.Errorf("imager mode: connect %s: %w", host, err)
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(deadline)
+	}
+
+	if _, err := fmt.Fprintf(conn, `{"method":"scope_get_mode","id":1}`+"\n"); err != nil {
+		return "", fmt.Errorf("imager mode: write: %w", err)
+	}
+
+	buf := make([]byte, 512)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return "", fmt.Errorf("imager mode: read: %w", err)
+	}
+	var resp struct {
+		Result string `json:"result"`
+		Code   int    `json:"code"`
+	}
+	if err := json.Unmarshal(buf[:n], &resp); err != nil {
+		return "", fmt.Errorf("imager mode: decode: %w", err)
+	}
+	if resp.Result == "" {
+		return "", fmt.Errorf("imager mode: empty result from %s", host)
+	}
+	return ScopeMode(resp.Result), nil
+}
+
+// ImagerModeFromAlpacaURL extracts the host from an ASCOM Alpaca base URL
+// (e.g. "http://192.168.86.218:32323") and calls ImagerMode. Convenience
+// wrapper for callers that only have the Alpaca address.
+func ImagerModeFromAlpacaURL(ctx context.Context, alpacaURL string) (ScopeMode, error) {
+	if !strings.Contains(alpacaURL, "://") {
+		alpacaURL = "http://" + alpacaURL
+	}
+	u, err := url.Parse(alpacaURL)
+	if err != nil {
+		return "", fmt.Errorf("imager mode: parse %q: %w", alpacaURL, err)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("imager mode: no host in %q", alpacaURL)
+	}
+	return ImagerMode(ctx, host)
+}
 
 // HardwareProbe reports which Seestar S30 environment indicators were found.
 // Checks are non-invasive: no serial port is opened, no processes are killed.
