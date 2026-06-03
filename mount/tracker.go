@@ -6,9 +6,15 @@ import (
 )
 
 // RateFunc returns the desired dual-axis angular velocity at a given moment.
-// azDegPerSec > 0 = east (clockwise),  < 0 = west.
-// elDegPerSec > 0 = up / north,        < 0 = down / south.
-type RateFunc func(t time.Time) (azDegPerSec, elDegPerSec float64)
+//
+// In alt-az mode (the normal S30 operating mode):
+//   axis0 (az)  > 0 = east (clockwise),  < 0 = west
+//   axis1 (el)  > 0 = up / north,        < 0 = down / south
+//
+// In equatorial mode (S30 on a wedge, firmware Mode 1 via :AP#):
+//   axis0 (RA)  > 0 = west (decreasing RA), < 0 = east — matches ASCOM MoveAxis convention
+//   axis1 (Dec) > 0 = north,                < 0 = south
+type RateFunc func(t time.Time) (axis0DegPerSec, axis1DegPerSec float64)
 
 // Track runs a closed-loop tracking loop at the given interval.
 // On each tick it calls fn(now) to obtain the desired angular velocities,
