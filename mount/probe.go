@@ -56,6 +56,14 @@ func ImagerMode(ctx context.Context, host string) (ScopeMode, error) {
 	if resp.Result == "" {
 		return "", fmt.Errorf("imager mode: empty result from %s", host)
 	}
+	// Normalize firmware aliases to canonical constants.
+	// The firmware returns "eq" for equatorial mode; callers expect ScopeModeEquatorial.
+	switch resp.Result {
+	case "eq":
+		return ScopeModeEquatorial, nil
+	case "alt_az", "altaz":
+		return ScopeModeAltAz, nil
+	}
 	return ScopeMode(resp.Result), nil
 }
 
