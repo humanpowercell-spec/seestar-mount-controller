@@ -1,4 +1,4 @@
-module github.com/humanpowercell-spec/seestar-mount-controller-
+module github.com/humanpowercell-spec/seestar-mount-controller
 
 go 1.21
 

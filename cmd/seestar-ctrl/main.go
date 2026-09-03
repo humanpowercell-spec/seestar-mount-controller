@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/humanpowercell-spec/seestar-mount-controller-/mount"
+	"github.com/humanpowercell-spec/seestar-mount-controller/mount"
 )
 
 func main() {

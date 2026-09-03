@@ -9,7 +9,7 @@ ESP32-S3 main.bin). All axis rate commands are verified direct motor writes —
 no internal coordinate transform is applied.
 
 ```
-go get github.com/humanpowercell-spec/seestar-mount-controller-@latest
+go get github.com/humanpowercell-spec/seestar-mount-controller@latest
 ```
 
 > **Platform note:** the library uses `golang.org/x/sys/unix` for raw serial
@@ -61,7 +61,7 @@ import (
     "log"
     "time"
 
-    "github.com/humanpowercell-spec/seestar-mount-controller-/mount"
+    "github.com/humanpowercell-spec/seestar-mount-controller/mount"
 )
 
 func main() {
@@ -170,7 +170,7 @@ import (
     "log"
     "time"
 
-    "github.com/humanpowercell-spec/seestar-mount-controller-/mount"
+    "github.com/humanpowercell-spec/seestar-mount-controller/mount"
 )
 
 func main() {
@@ -290,7 +290,7 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 `seestar-ctrl` is a thin CLI wrapper over the library for manual control and scripting.
 
 ```bash
-go install github.com/humanpowercell-spec/seestar-mount-controller-/cmd/seestar-ctrl@latest
+go install github.com/humanpowercell-spec/seestar-mount-controller/cmd/seestar-ctrl@latest
 
 seestar-ctrl probe               # check hardware indicators; exits 1 if not detected
 seestar-ctrl home
