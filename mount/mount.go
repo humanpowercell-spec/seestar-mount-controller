@@ -204,7 +204,9 @@ func (m *Mount) PulseMove(dir string, dur int) error {
 // ---- Motion — dual axis (tracking) ----
 
 // TrackRate sets both axis angular velocities simultaneously using :Rvr# (az/axis1)
-// and :Rvd# (el/axis2).  This is the primary primitive for satellite tracking.
+// and :Rvd# (el/axis2).  See also TrackRateSY, which does the same thing in a
+// single accel-limited :SY# command (ESP32 motion mode 7) and is usually the
+// better choice for a streamed tracking loop.
 //
 //   azDegPerSec > 0 = east (clockwise),   < 0 = west
 //   elDegPerSec > 0 = up / north,         < 0 = down / south
@@ -270,6 +272,41 @@ func (m *Mount) TrackRate(azDegPerSec, elDegPerSec float64) error {
 		}
 	}
 	return nil
+}
+
+// TrackRateSY sets both axis angular velocities in a single :SY command
+// (ESP32 motion "mode 7").  It is the newer, cleaner equivalent of TrackRate:
+//
+//   - one write for both axes instead of four (:Rvr + :Me + :Rvd + :Mn)
+//   - the firmware accel-limits the current rate toward the target (±32 units
+//     per control tick, snapping through zero), so direction reversals and
+//     rate steps are ramped rather than instantaneous — smoother to stream
+//   - a zero value on an axis decelerates that axis to a stop
+//
+// The value is a signed rate in the same sidereal-multiple units as :Rv,
+// clamped to ±1440 (6 deg/s).  Sign encodes direction:
+//
+//   azDegPerSec > 0 = east,   < 0 = west
+//   elDegPerSec > 0 = north,  < 0 = south
+//
+// Wire format: ":SY%+05d%+05d#" (sign + 4-digit magnitude per axis), matching
+// what zwoair_imager's object tracker streams.  Pair with EnableTracking(true).
+//
+// RE: seestar-s30-re docs/esp32_firmware.md (:SY# / motion mode 7,
+// FUN_42011bd0 / FUN_42011cac), docs/rate_control.md, CAP-MOUNT-014.
+func (m *Mount) TrackRateSY(azDegPerSec, elDegPerSec float64) error {
+	clamp := func(deg float64) int {
+		u := deg * siderealUnitsPerDegSec
+		if u > maxSiderealUnits {
+			u = maxSiderealUnits
+		} else if u < -maxSiderealUnits {
+			u = -maxSiderealUnits
+		}
+		return int(math.Round(u))
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.send(fmt.Sprintf(":SY%+05d%+05d#", clamp(azDegPerSec), clamp(elDegPerSec)))
 }
 
 // Stop stops all axes immediately.

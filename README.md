@@ -124,9 +124,23 @@ time.Sleep(10 * time.Second)
 m.Stop()
 ```
 
-For closed-loop tracking, `Track` calls your `RateFunc` on each tick and
-sends the result to `TrackRate`. The loop exits cleanly when the context is
-cancelled.
+### `TrackRateSY` — single-command, accel-limited
+
+`TrackRateSY` does the same job as `TrackRate` but in one `:SY#` write instead
+of four, and the firmware **accel-ramps** the rate toward the target (ESP32
+motion "mode 7") rather than stepping it. For a streamed loop it's the better
+choice — less serial traffic and smoother direction reversals. A zero on an axis
+decelerates that axis to a stop.
+
+```go
+m.TrackRateSY(0.5, 0.25) // one :SY+0120+0060# ; firmware ramps to it
+```
+
+`TrackSY(ctx, interval, fn)` is `Track` wired to `TrackRateSY`.
+
+For closed-loop tracking, `Track` (or `TrackSY`) calls your `RateFunc` on each
+tick and sends the result to the mount. The loop exits cleanly when the context
+is cancelled.
 
 ```go
 // RateFunc signature: func(t time.Time) (azDegPerSec, elDegPerSec float64)
@@ -234,8 +248,10 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 | `GotoCoords(raHours, decDeg float64) error` | Start GoTo slew (non-blocking). |
 | `GotoAndWait(ctx, raHours, decDeg, toleranceDeg float64) error` | GoTo + block until arrived. |
 | `WaitGoTo(ctx, toleranceDeg float64) error` | Block until last GoTo completes. |
-| `TrackRate(azDeg/s, elDeg/s float64) error` | Set both axis rates directly. Primary tracking primitive. |
-| `Track(ctx, interval, RateFunc) error` | Closed-loop tracking loop. |
+| `TrackRate(azDeg/s, elDeg/s float64) error` | Set both axis rates directly (`:Rvr#`/`:Rvd#`). |
+| `TrackRateSY(azDeg/s, elDeg/s float64) error` | Same in one accel-limited `:SY#` command (motion mode 7). Preferred for a streamed loop. |
+| `Track(ctx, interval, RateFunc) error` | Closed-loop tracking loop (uses `TrackRate`). |
+| `TrackSY(ctx, interval, RateFunc) error` | Closed-loop tracking loop (uses `TrackRateSY`). |
 | `Stop() error` | Stop both axes. |
 | `StopRA() error` | Stop azimuth axis only. |
 | `StopDec() error` | Stop elevation axis only. |
@@ -255,6 +271,18 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 | `Reset() error` | Hard-reset the ESP32-S3. |
 | `Cmd(cmd string) (string, error)` | Send raw LX200 command, read reply. |
 
+### Accessories (separate device nodes, not the serial port)
+
+| Method | Description |
+|--------|-------------|
+| `OpenFocuser(dev string) (*Focuser, error)` | EAF telephoto focuser via `/dev/eaf` ioctls. |
+| `(Focuser).Goto(target uint32) error` / `GotoAndWait(ctx, target)` | Absolute move in microsteps (0–`MaxPos`, ~3040 on the S30). |
+| `(Focuser).Pos() / MaxPos() / IsMoving() / Halt()` | State + control. |
+| `OpenFilterWheel(dev string) (*FilterWheel, error)` | Built-in filter wheel via `/dev/pwm-gpio-misc`. GPIO/coil infrastructure only — `Step(a,b)` primitive; the full position sequence isn't reverse-engineered yet. |
+| `ReadCompass() (CompassReading, error)` / `AverageCompass(n)` | AK09915 magnetometer heading (`/dev/iio:device2`, held by `zwoair_imager`). |
+| `Declination(lat, lon, t) float64` | WMM2025 magnetic declination for true-north correction. |
+| `ImagerMode(ctx, host) (ScopeMode, error)` | Probe the imager's alt-az / equatorial mode (wedge detection). |
+
 ---
 
 ## CLI tool
@@ -268,6 +296,7 @@ seestar-ctrl probe               # check hardware indicators; exits 1 if not det
 seestar-ctrl home
 seestar-ctrl gotowait 18.6156 38.78 0.1
 seestar-ctrl trackrate 0.5 0.2
+seestar-ctrl trackrate-sy 0.5 0.2   # single :SY# command (motion mode 7)
 seestar-ctrl stop
 seestar-ctrl radec
 seestar-ctrl raw ':GU#'

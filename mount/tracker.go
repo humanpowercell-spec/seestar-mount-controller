@@ -33,14 +33,29 @@ func (m *Mount) Track(ctx context.Context, interval time.Duration, fn RateFunc) 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	return m.track(ctx, ticker, fn, (*Mount).TrackRate)
+}
+
+// TrackSY is Track but drives each tick through TrackRateSY (single accel-limited
+// :SY# command, ESP32 motion mode 7) instead of TrackRate (:Rvr#/:Rvd#).
+// Prefer this for a streamed loop: one write per tick and the firmware ramps
+// rate changes instead of stepping them.
+func (m *Mount) TrackSY(ctx context.Context, interval time.Duration, fn RateFunc) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	return m.track(ctx, ticker, fn, (*Mount).TrackRateSY)
+}
+
+func (m *Mount) track(ctx context.Context, ticker *time.Ticker, fn RateFunc,
+	set func(*Mount, float64, float64) error) error {
 	for {
 		select {
 		case <-ctx.Done():
 			_ = m.Stop()
 			return ctx.Err()
 		case t := <-ticker.C:
-			ra, dec := fn(t)
-			if err := m.TrackRate(ra, dec); err != nil {
+			a0, a1 := fn(t)
+			if err := set(m, a0, a1); err != nil {
 				_ = m.Stop()
 				return err
 			}

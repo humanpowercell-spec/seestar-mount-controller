@@ -222,6 +222,18 @@ func main() {
 		}
 		check(m.TrackRate(azRate, elRate))
 
+	case "trackrate-sy":
+		requireArgs(args, 3, "trackrate-sy <az_deg/s> <el_deg/s>")
+		azRate, err := strconv.ParseFloat(args[1], 64)
+		if err != nil {
+			fatalf("az rate: %v", err)
+		}
+		elRate, err := strconv.ParseFloat(args[2], 64)
+		if err != nil {
+			fatalf("el rate: %v", err)
+		}
+		check(m.TrackRateSY(azRate, elRate))
+
 	case "syncpos":
 		requireArgs(args, 3, "syncpos <ra_hours> <dec_deg>")
 		ra, err := strconv.ParseFloat(args[1], 64)
@@ -316,7 +328,8 @@ func usage() {
   goto <ra_h> <dec_deg>         GoTo and return immediately
   gotowait <ra_h> <dec_deg> [tol]  GoTo and wait until arrived (default tol=0.1°)
   waitgoto [tol]                Wait for current GoTo to complete (default tol=0.1°)
-  trackrate <az_deg/s> <el_deg/s>   Set dual-axis az/el rate for satellite tracking
+  trackrate <az_deg/s> <el_deg/s>   Set dual-axis az/el rate for satellite tracking (:Rvr#/:Rvd#)
+  trackrate-sy <az_deg/s> <el_deg/s>  Same, single :SY# command (motion mode 7, accel-limited)
   syncpos <ra_h> <dec_deg>      Sync position registers without moving
   encoders                      Read raw RA/Dec encoder counts (:GY#)
   radec                         Print current RA/Dec
