@@ -294,6 +294,44 @@ func main() {
 		check(m.SetDateTime(t))
 		fmt.Println("time synced to", t.Format(time.RFC3339))
 
+	case "homeflag":
+		on, err := m.GetHomeFlag()
+		check(err)
+		fmt.Printf("home/DST flag: %v (:GH#, pollable any time — unlike homestatus)\n", on)
+
+	case "backlash":
+		s1, err := m.GetBacklashSlot1()
+		check(err)
+		s2, err := m.GetBacklashSlot2()
+		check(err)
+		fmt.Printf("slot1 (_g): az=%d\" alt=%d\"\n", s1.AzArcsec, s1.AltArcsec)
+		fmt.Printf("slot2:      az=%d\" alt=%d\"\n", s2.AzArcsec, s2.AltArcsec)
+
+	case "backlashmode":
+		if len(args) >= 2 {
+			mode, err := strconv.Atoi(args[1])
+			if err != nil {
+				fatalf("mode: %v", err)
+			}
+			check(m.SetBacklashMode(mode))
+			fmt.Printf("backlash mode set to %d (effect unconfirmed — see RE_PROVENANCE.md)\n", mode)
+			return
+		}
+		s, err := m.GetBacklashMode()
+		check(err)
+		fmt.Printf("%q (raw :GBu# reply — handler not decompiled, meaning unconfirmed)\n", s)
+
+	case "led":
+		requireArgs(args, 2, "led <on|off>")
+		switch strings.ToLower(args[1]) {
+		case "on":
+			check(m.SetIlluminatorLED(true))
+		case "off":
+			check(m.SetIlluminatorLED(false))
+		default:
+			fatalf("led: must be on or off")
+		}
+
 	case "raw":
 		requireArgs(args, 2, "raw <:CMD#>")
 		reply, err := m.Cmd(strings.Join(args[1:], " "))
@@ -338,6 +376,10 @@ func usage() {
   version                       Print firmware version
   setloc <lat> <lon>            Set observer location (decimal degrees)
   settime                       Sync mount clock to current UTC
+  homeflag                      Read home/DST flag (:GH#) — pollable any time
+  backlash                      Read both backlash slots, arcsec (:GBGR/D#, :GBZR/D#)
+  backlashmode [0-2]            Get (:GBu#) or set (:SBu{n}#) backlash mode — effect unconfirmed
+  led <on|off>                  ESP32 IR illuminator LED (:FTE#/:FTD#) — not the EAF focuser
   raw <:CMD#>                   Send raw LX200 command, print reply
 `)
 }

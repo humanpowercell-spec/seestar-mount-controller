@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// RE: seestar-re/docs/compass_azimuth_alignment.md:24 (AK09915 @ i2c-1,
+// iio:device2), :48 (scale = 150 nT/LSB), :58-77 (Pi-side reading + hard/soft
+// -iron calibration algorithm and NVS paths).
 const (
 	// DefaultIIODev is the Linux IIO chardev for the AK09915 magnetometer.
 	// This device is exclusively held by zwoair_imager when it is running;
@@ -112,18 +115,25 @@ func readCompassOnce(dev, calibPath string) (CompassReading, error) {
 	}
 
 	// Hard-iron correction: remove static bias from nearby ferrous material.
+	// Soft-iron correction: compensate for field distortion (ellipse → circle).
+	// RE: seestar-re/docs/compass_azimuth_alignment.md:60-65 (2D ellipse
+	// correction formula, matches x11/x12/y11/y12 below exactly).
 	xc := x - calib.hardX
 	yc := y - calib.hardY
-	// Soft-iron correction: compensate for field distortion (ellipse → circle).
 	xCal := calib.mat[0][0]*xc + calib.mat[0][1]*yc
 	yCal := calib.mat[1][0]*xc + calib.mat[1][1]*yc
-	// atan2(-xCal, yCal): sensor x-axis ≈ West, y-axis ≈ North in S30 physical mounting.
+	// atan2(-xCal, yCal): sensor x-axis ≈ West, y-axis ≈ North in S30 physical
+	// mounting (live-observed, not stated explicitly in the RE'd formula above).
 	heading := math.Mod(math.Atan2(-xCal, yCal)*180/math.Pi+360, 360)
 	return CompassReading{X: x, Y: y, Z: z, Heading: heading, Calibrated: true}, nil
 }
 
 // loadCompassCalib parses the ZWO imager XML for msensor hard/soft-iron values.
 // Returns nil, nil when the file doesn't exist (uncalibrated is valid).
+//
+// RE: seestar-re/docs/compass_azimuth_alignment.md:66-73 (NVS key paths
+// setting2/imager/sensor_calibration/msensor/{x,y,x11,x12,y11,y12} — the XML
+// mirrors these key names as element tags).
 func loadCompassCalib(path string) (*compassCalib, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

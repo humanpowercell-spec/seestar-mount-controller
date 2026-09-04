@@ -14,6 +14,10 @@ import (
 // In equatorial mode (S30 on a wedge, firmware Mode 1 via :AP#):
 //   axis0 (RA)  > 0 = west (decreasing RA), < 0 = east — matches ASCOM MoveAxis convention
 //   axis1 (Dec) > 0 = north,                < 0 = south
+//
+// RE: seestar-re/docs/esp32_firmware.md:811 (GoTo Algorithm Mode 1
+// FUN_4200eb10, :AP#/equatorial), :841 (Mode 2 FUN_42010450, :AA#/alt-az),
+// :778-793 (Motion Controller GoTo Vtable — mode dispatch).
 type RateFunc func(t time.Time) (axis0DegPerSec, axis1DegPerSec float64)
 
 // Track runs a closed-loop tracking loop at the given interval.

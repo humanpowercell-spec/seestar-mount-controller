@@ -1,8 +1,14 @@
 // Package mount provides direct serial control of the Seestar S30 telescope mount
 // via the LX200-compatible protocol on /dev/ttyS3 (115200 8N1).
 //
-// Protocol source: ESP32-S3 firmware (main.bin) reverse engineered via Ghidra.
-// See seestar_esp32_re.md for the full command map and state machine description.
+// Protocol source: github.com/humanpowercell-spec/seestar-re is authoritative
+// for every wire-level fact this package encodes — the ESP32-S3 firmware
+// (main.bin) command map and state machine (docs/esp32_firmware.md), reached
+// via Ghidra decompilation. Every function below that makes a protocol claim
+// cites the specific seestar-re file/line/anchor it comes from; see
+// RE_PROVENANCE.md at the repo root for the citation convention and what's
+// deliberately not implemented (only decompiled where the wire format was
+// never fully pinned down).
 //
 // Startup sequence: Open → ExitHome (sends :SH0# to clear home mode) → motion commands.
 // Without ExitHome, SlewRate and TrackRate silently no-op (firmware state != 3).
@@ -148,6 +154,9 @@ func (m *Mount) readReply() (string, error) {
 
 // Slew starts movement at a preset integer speed (1–9) in the given direction.
 // Sends :R{speed}# then :M{dir}#.
+//
+// RE: seestar-re/docs/esp32_firmware.md:488 (:R{1-9}# preset_rate_setter),
+// :495-504 (state3_dispatch Me/Mw/Mn/Ms), :593 (Rate Encoding Summary).
 func (m *Mount) Slew(dir string, speed int) error {
 	dir = strings.ToLower(dir)
 	if speed < 1 || speed > 9 {
@@ -165,6 +174,10 @@ func (m *Mount) Slew(dir string, speed int) error {
 // SlewRate starts continuous motion using :MT{dir}{nn}# at the given speed.
 // degPerSec is clamped to 0–6 deg/s and mapped to firmware integers 1–10.
 // Requires the mount to be in motion state (call ExitHome first).
+//
+// RE: seestar-re/docs/esp32_firmware.md:518 (:MT{dir}{nn}# @ 0x420097c0),
+// :595 (validator `(nn-1) < 10`, Rate Encoding Summary), :463 (why :SH0# is
+// required first).
 func (m *Mount) SlewRate(dir string, degPerSec float64) error {
 	dir = strings.ToLower(dir)
 	if !isDir(dir) {
@@ -178,6 +191,10 @@ func (m *Mount) SlewRate(dir string, degPerSec float64) error {
 // SetRate sets the per-axis variable rate via :Rv{axis}{speed}# in deg/s.
 // axis must be "ra" or "dec".  Use before PulseMove on the same axis.
 // Range: 0–6 deg/s; internally converted to sidereal multiples (0–1440).
+//
+// RE: seestar-re/docs/esp32_firmware.md:410 (Coordinate frame for :Rvr#/:Rvd# —
+// verified direct motor rates, no coordinate transform), :372-373 (RA/Dec Rv
+// rate registers).
 func (m *Mount) SetRate(axis string, degPerSec float64) error {
 	axisChar, err := axisToChar(axis)
 	if err != nil {
@@ -190,6 +207,9 @@ func (m *Mount) SetRate(axis string, degPerSec float64) error {
 // PulseMove fires a timed pulse using :MTD{dir}{dur:02d}#.
 // Call SetRate first to set the pulse speed.
 // dur is in mount-native units (believed to be centiseconds; dur=10 ≈ 100 ms).
+//
+// RE: seestar-re/docs/esp32_firmware.md:295 (MTD_pulse_body @ 0x420090a4),
+// :596 (Rate Encoding Summary — duration 0-99, native units).
 func (m *Mount) PulseMove(dir string, dur int) error {
 	dir = strings.ToLower(dir)
 	if !isDir(dir) {
@@ -227,6 +247,10 @@ func (m *Mount) PulseMove(dir string, dur int) error {
 // them here without any prior coordinate rotation.
 //
 // Both commands are sent without flushing so a 10–20 Hz loop incurs minimal overhead.
+//
+// RE: seestar-re/docs/esp32_firmware.md:410-425 (Coordinate frame for
+// :Rvr#/:Rvd# — verified direct motor rates), :372-373 (rate registers
+// DAT_3fc95910/14, DAT_3fc95908/0c).
 func (m *Mount) TrackRate(azDegPerSec, elDegPerSec float64) error {
 	azUnits := math.Abs(azDegPerSec) * siderealUnitsPerDegSec
 	azUnits = math.Max(0, math.Min(maxSiderealUnits, azUnits))
@@ -292,8 +316,10 @@ func (m *Mount) TrackRate(azDegPerSec, elDegPerSec float64) error {
 // Wire format: ":SY%+05d%+05d#" (sign + 4-digit magnitude per axis), matching
 // what zwoair_imager's object tracker streams.  Pair with EnableTracking(true).
 //
-// RE: seestar-s30-re docs/esp32_firmware.md (:SY# / motion mode 7,
-// FUN_42011bd0 / FUN_42011cac), docs/rate_control.md, CAP-MOUNT-014.
+// RE: seestar-re/docs/esp32_firmware.md:574 (:SY# handler @ 0x42008f94,
+// FUN_42014684/FUN_4201466c store the target; FUN_42011bd0 RA / FUN_42011cac
+// Dec = motion-mode-7 accel-ramp), docs/rate_control.md:74 (:SY dual-axis
+// rate), docs/CAPABILITIES.md CAP-MOUNT-014.
 func (m *Mount) TrackRateSY(azDegPerSec, elDegPerSec float64) error {
 	clamp := func(deg float64) int {
 		u := deg * siderealUnitsPerDegSec
@@ -310,19 +336,32 @@ func (m *Mount) TrackRateSY(azDegPerSec, elDegPerSec float64) error {
 }
 
 // Stop stops all axes immediately.
+//
+// RE: seestar-re/docs/esp32_firmware.md:502 (:Q# → stop_all @ 0x4200c454).
 func (m *Mount) Stop() error { return m.cmdNoReply(":Q#") }
 
 // StopRA stops the RA (east/west) axis only.
+//
+// RE: seestar-re/docs/esp32_firmware.md:503 (:Qe# `:Qw#` → stop_RA).
 func (m *Mount) StopRA() error { return m.cmdNoReply(":Qe#") }
 
 // StopDec stops the Dec (north/south) axis only.
+//
+// RE: seestar-re/docs/esp32_firmware.md:504 (:Qn# `:Qs#` → stop_Dec).
 func (m *Mount) StopDec() error { return m.cmdNoReply(":Qn#") }
 
 // Home slews to the mount's home position.
+//
+// RE: seestar-re/docs/esp32_firmware.md:515 (:hC# @ 0x420078d0, "Go to home
+// position"), :397 (State Machine).
 func (m *Mount) Home() error { return m.cmdNoReply(":hC#") }
 
 // ExitHome clears home/park mode, transitioning the firmware to motion state 3.
 // Required after Open and after any Home call before SlewRate or TrackRate will work.
+//
+// RE: seestar-re/docs/esp32_firmware.md:311 (SH_handler @ 0x42007868,
+// :SH0#=clear DST/home flag), :463-469 ("Why :MT# requires :SH0# first"),
+// :605 (Notable Undocumented Commands).
 func (m *Mount) ExitHome() error { return m.cmdNoReply(":SH0#") }
 
 // HomeAndWait slews to the home position, blocks until homing completes, then
@@ -355,6 +394,10 @@ func (m *Mount) HomeAndWait(ctx context.Context) error {
 // HomeStatus returns true when the homing sequence is complete.
 // Returns false (no error) if the mount is not in a homing sequence — the
 // firmware silently drops :hF# outside of homing, causing a read timeout.
+//
+// RE: seestar-re/docs/esp32_firmware.md:516 (:hF# @ 0x4200793c, "Home
+// complete? -> '0'/'1'"), :316 (hF_home_complete @ 0x42010788, "checks
+// home-done flags, transitions to state 2" — only replies during homing).
 func (m *Mount) HomeStatus() (bool, error) {
 	resp, err := m.Cmd(":hF#")
 	if err != nil {
@@ -367,6 +410,9 @@ func (m *Mount) HomeStatus() (bool, error) {
 }
 
 // EnableTracking enables (true) or disables (false) active tracking (:TO1# / :TO0#).
+//
+// RE: seestar-re/docs/esp32_firmware.md:522 (:TO{0/1}# @ 0x42007c18,
+// "Tracking toggle: '0'=off, '1'=on").
 func (m *Mount) EnableTracking(enable bool) error {
 	if enable {
 		return m.cmdNoReply(":TO1#")
@@ -375,10 +421,17 @@ func (m *Mount) EnableTracking(enable bool) error {
 }
 
 // SyncMotors syncs the motor position registers to the current physical position (:SIM#).
+//
+// RE: seestar-re/docs/esp32_firmware.md:317 (SI_sync_motors @ 0x4200eb04,
+// "sets _DAT_3fc9755c=1 (sync trigger)"), :520 (:SI{M}# — :SIM# only), :386
+// (sync trigger flag).
 func (m *Mount) SyncMotors() error { return m.cmdNoReply(":SIM#") }
 
 // Reset triggers an immediate ESP32-S3 hard reset (:AR#).
 // The mount will be unresponsive for several seconds while it reboots.
+//
+// RE: seestar-re/docs/esp32_firmware.md:514 (:AR# @ 0x420078c4, "**Hard
+// reset** (esp_restart() + ill() loop)"), :615.
 func (m *Mount) Reset() error { return m.cmdNoReply(":AR#") }
 
 // ---- GoTo ----
@@ -386,6 +439,12 @@ func (m *Mount) Reset() error { return m.cmdNoReply(":AR#") }
 // GotoCoords slews to the given equatorial coordinates and stores them for WaitGoTo.
 // raHours: right ascension in decimal hours (0–24).
 // decDeg: declination in decimal degrees (−90 to +90).
+//
+// RE: seestar-re/docs/esp32_firmware.md:569 (:Sr{HH:MM:SS}# @ 0x4200894c),
+// :562 (:Sd{±DD*MM:SS}# @ 0x420086d4), :519 (:MS# @ 0x420079e0, "GoTo slew
+// (needs :Sr#/:Sd# set first)"), :766-810 (GoTo planner + Mode 1/2 algorithms).
+// Backlash take-up on direction reversal applies to this path (not to
+// SetRate/TrackRate) — see docs/esp32_firmware.md:669 Backlash compensation.
 func (m *Mount) GotoCoords(raHours, decDeg float64) error {
 	raCmd, decCmd := formatRADec(raHours, decDeg)
 
@@ -412,6 +471,8 @@ func (m *Mount) GotoCoords(raHours, decDeg float64) error {
 // Use after GotoCoords completes to correct accumulated pointing error, or to
 // manually tell the mount where it is currently pointing.
 // Sends :Sr# + :Sd# + :SIM# (set target coordinates then sync motors to them).
+//
+// RE: seestar-re/docs/esp32_firmware.md:569 (:Sr#), :562 (:Sd#), :317/:520 (:SIM#).
 func (m *Mount) SyncPosition(raHours, decDeg float64) error {
 	raCmd, decCmd := formatRADec(raHours, decDeg)
 
@@ -473,6 +534,10 @@ func (m *Mount) GotoAndWait(ctx context.Context, raHours, decDeg, toleranceDeg f
 
 // SetTracking sets the mount tracking rate. mode must be "sidereal", "solar", or "lunar".
 // Only takes effect outside motion state (call Stop first if mount is moving).
+//
+// RE: seestar-re/docs/esp32_firmware.md:523-525 (:TQ#/:TS#/:TL# ->
+// tracking_mode_set(0/2/1), sub_table_1/2 — states 0/1 only), :471-473 ("Why
+// :TQ#/:TS#/:TL# are silently dropped in state 3" — stop motion first).
 func (m *Mount) SetTracking(mode string) error {
 	cmds := map[string]string{
 		"sidereal": ":TQ#",
@@ -489,6 +554,10 @@ func (m *Mount) SetTracking(mode string) error {
 // ---- Reads ----
 
 // RADec returns the current right ascension (decimal hours) and declination (decimal degrees).
+//
+// RE: seestar-re/docs/esp32_firmware.md:546 (:GR{R/T/bare}# @ 0x42009314,
+// "Get RA + tracking rate variants"), :535 (:GD# @ 0x42009380, "Get Dec
+// (formatted)").
 func (m *Mount) RADec() (ra, dec float64, err error) {
 	m.mu.Lock()
 	raStr, err := m.query(":GR#")
@@ -511,6 +580,9 @@ func (m *Mount) RADec() (ra, dec float64, err error) {
 }
 
 // AltAz returns the current altitude and azimuth in decimal degrees.
+//
+// RE: seestar-re/docs/esp32_firmware.md:531 (:GA# @ 0x4200972c, "Get
+// altitude"), :553 (:GZ# @ 0x42009778, "Get azimuth").
 func (m *Mount) AltAz() (alt, az float64, err error) {
 	m.mu.Lock()
 	altStr, err := m.query(":GA#")
@@ -536,6 +608,10 @@ func (m *Mount) AltAz() (alt, az float64, err error) {
 // Uses LX200 :Gt# (latitude) and :Gg# (longitude).
 // Longitude follows the LX200 convention: West is positive; callers should
 // negate to convert to East-positive (WGS-84).
+//
+// RE: seestar-re/docs/esp32_firmware.md:548 (:Gt# @ 0x42007dc0, "Get
+// latitude"), :538 (:Gg# @ 0x42007da8, "Get longitude"), :740 (Coordinate
+// Math / Latitude-Longitude storage).
 func (m *Mount) GetLocation() (lat, lonWest float64, err error) {
 	latStr, err := m.Cmd(":Gt#")
 	if err != nil {
@@ -557,6 +633,9 @@ func (m *Mount) GetLocation() (lat, lonWest float64, err error) {
 // EncoderPos reads the raw motor encoder counts from :GY#.
 // Returns two 5-digit signed integers (az, el) that increment with each motor step.
 // Useful for sub-arcsecond closed-loop correction in a tracking loop.
+//
+// RE: seestar-re/docs/esp32_firmware.md:552 (:GY# @ 0x42008618, "Get motor
+// encoder positions %05d%05d"), :607 (Notable Undocumented Commands).
 func (m *Mount) EncoderPos() (az, el int32, err error) {
 	resp, err := m.Cmd(":GY#")
 	if err != nil {
@@ -579,14 +658,23 @@ func (m *Mount) EncoderPos() (az, el int32, err error) {
 }
 
 // Status returns the raw :GU# status string from the mount.
+//
+// RE: seestar-re/docs/esp32_firmware.md:550 (:GU# @ 0x42008638, "**Get full
+// status string**"), :318 (GU_status_builder @ 0x420084ca).
 func (m *Mount) Status() (string, error) { return m.Cmd(":GU#") }
 
 // Version returns the firmware version string.
+//
+// RE: seestar-re/docs/esp32_firmware.md:551 (:GV# @ 0x420085a4).
 func (m *Mount) Version() (string, error) { return m.Cmd(":GV#") }
 
 // ---- Configuration ----
 
 // SetLocation sets the observer's geographic coordinates in decimal degrees.
+//
+// RE: seestar-re/docs/esp32_firmware.md:567 (:SM{eq/GE/MC/TI}# @ 0x42008a7c,
+// "Multi-set: coords / location / motion / time" — :SMGE{lat}&{lon}# variant),
+// :605 (Notable Undocumented Commands).
 func (m *Mount) SetLocation(lat, lon float64) error {
 	return m.cmdNoReply(fmt.Sprintf(":SMGE%.6f&%.6f#", lat, lon))
 }
@@ -597,6 +685,10 @@ func (m *Mount) SetLocation(lat, lon float64) error {
 // siderealHours is the LST in decimal hours as reported by the firmware.
 // Comparing siderealHours against the expected GMST+longitude is the definitive
 // check for LST offset errors caused by a stale :SG# UTC offset.
+//
+// RE: seestar-re/docs/esp32_firmware.md:542 (:GL# @ 0x420083c4, "Get local
+// time"), :533 (:GC# @ 0x42007cb0, "Get date"), :547 (:GS# @ 0x42008570,
+// "Get sidereal time").
 func (m *Mount) GetClock() (localTime time.Time, siderealHours float64, err error) {
 	timeStr, err := m.Cmd(":GL#")
 	if err != nil {
@@ -636,6 +728,10 @@ func (m *Mount) GetClock() (localTime time.Time, siderealHours float64, err erro
 // Sends :SG+00.0# first to zero any stored timezone offset so the firmware
 // treats the following :SL# value as UTC. Without this, a stale offset (e.g.
 // -04:00 for EDT) shifts LST by hours, causing GoTo to aim at the wrong AzAlt.
+//
+// RE: seestar-re/docs/esp32_firmware.md:564 (:SG{offset}# @ 0x420087f0, "Set
+// UTC offset"), :561 (:SC{MM/DD/YY}# @ 0x42008680, "Set date"), :566
+// (:SL{HH:MM:SS}# @ 0x42008854, "Set local time").
 func (m *Mount) SetDateTime(t time.Time) error {
 	if err := m.cmdNoReply(":SG+00.0#"); err != nil {
 		return fmt.Errorf("SG: %w", err)

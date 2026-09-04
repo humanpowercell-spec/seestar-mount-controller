@@ -12,7 +12,16 @@ import (
 	"syscall"
 )
 
-// ImagerPort is the JSON-RPC port of the ZWO imager process.
+// ImagerPort is the port ImagerMode dials. Despite the name (kept for API
+// compatibility — this predates the finding below), scope_get_mode is a
+// zwoair_guider RPC method, not an imager one; the guider also listens on
+// 4700-4702 in an "imager-relay" role with the same auth, so dialing 4700
+// still reaches it without needing zwoair_guider's primary port (4400).
+//
+// RE: seestar-re/docs/guider_rpc_api.md:18-22 (Transport/ports — 4700-4702
+// "imager-relay / slave", same preprocessClientAuth as 4400), :120
+// (GetMode()/scope_get_mode row), re/rpc/guider_3.3.1_rpc_handlers.c:6049
+// (scope_get_mode @ 0x0017a170 — lives in the guider binary, not the imager).
 const ImagerPort = "4700"
 
 // ScopeMode represents the Seestar's current operating mode.
@@ -23,9 +32,12 @@ const (
 	ScopeModeEquatorial ScopeMode = "equatorial"
 )
 
-// ImagerMode queries the ZWO imager's JSON-RPC server on port 4700 for the
-// current scope mode. host is the hostname or IP of the Seestar (no port).
-// Returns ScopeModeAltAz or ScopeModeEquatorial on success.
+// ImagerMode calls scope_get_mode (see ImagerPort's doc comment for why port
+// 4700 reaches this guider RPC method) for the current scope mode. host is
+// the hostname or IP of the Seestar (no port). Returns ScopeModeAltAz or
+// ScopeModeEquatorial on success.
+//
+// RE: seestar-re/docs/guider_rpc_api.md:120 (response `{"result":"alt_az"|"eq"}`).
 func ImagerMode(ctx context.Context, host string) (ScopeMode, error) {
 	d := net.Dialer{}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, ImagerPort))
@@ -117,6 +129,11 @@ func (p HardwareProbe) Detected() bool {
 // ProbeHardware scans the local environment for Seestar S30 indicators without
 // opening the serial port or affecting any running process.
 // Pass an empty string to use DefaultDev for the TTY check.
+//
+// RE: seestar-re/docs/PI_SYSTEM.md:82 (/home/pi/ASIAIR/config — version file),
+// seestar-re/docs/TEARDOWN.md (etc/zwo/Alpaca — ZWO's ASCOM Alpaca bridge dir).
+// These are environment fingerprints, not protocol facts — lower confidence
+// than the wire-level citations elsewhere in this package.
 func ProbeHardware(dev string) HardwareProbe {
 	if dev == "" {
 		dev = DefaultDev

@@ -8,6 +8,14 @@ Protocol and command map derived from firmware reverse engineering (Ghidra,
 ESP32-S3 main.bin). All axis rate commands are verified direct motor writes —
 no internal coordinate transform is applied.
 
+> **Provenance:** [seestar-re](https://github.com/humanpowercell-spec/seestar-re)
+> is the authoritative source for every wire-protocol fact this library
+> encodes. Every function that makes a protocol claim cites the specific
+> seestar-re file/line it comes from in a `// RE:` comment — see
+> [RE_PROVENANCE.md](RE_PROVENANCE.md) for the convention, and for the (short)
+> list of decompiled-but-unconfirmed commands this library deliberately does
+> not implement rather than guess at.
+
 ```
 go get github.com/humanpowercell-spec/seestar-mount-controller@latest
 ```
@@ -270,6 +278,10 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 | `SyncMotors() error` | Sync motor registers to current position. |
 | `Reset() error` | Hard-reset the ESP32-S3. |
 | `Cmd(cmd string) (string, error)` | Send raw LX200 command, read reply. |
+| `GetHomeFlag() (bool, error)` | Home/DST flag (`:GH#`) — unlike `HomeStatus`, pollable outside an active homing sequence. |
+| `GetBacklashSlot1() / GetBacklashSlot2() (BacklashReading, error)` | Read the two backlash-compensation runtime slots, arcsec (`:GBGR#/:GBGD#`, `:GBZR#/:GBZD#`). Read-only — see Notes on why there's no setter. |
+| `GetBacklashMode() (string, error)` / `SetBacklashMode(0-2) error` | Raw `:GBu#` reply / `:SBu{n}#` — wire format confirmed, firmware-side effect of each mode is not. |
+| `SetIlluminatorLED(bool) error` | ESP32 GPIO3+45 IR LED (`:FTE#`/`:FTD#`) — despite the LX200 naming, unrelated to the EAF focuser. |
 
 ### Accessories (separate device nodes, not the serial port)
 
@@ -299,6 +311,9 @@ seestar-ctrl trackrate 0.5 0.2
 seestar-ctrl trackrate-sy 0.5 0.2   # single :SY# command (motion mode 7)
 seestar-ctrl stop
 seestar-ctrl radec
+seestar-ctrl backlash              # both slots, arcsec
+seestar-ctrl homeflag              # pollable home/DST check
+seestar-ctrl led on
 seestar-ctrl raw ':GU#'
 ```
 
@@ -319,3 +334,23 @@ Run `seestar-ctrl` with no arguments for the full command list.
 - Rate units: the firmware uses *sidereal multiples* (1 unit = 15 arcsec/s). The library converts from deg/s transparently. Maximum is 6 deg/s (1440 sidereal multiples) per axis.
 - `TrackRate` is concurrency-safe. A position-polling goroutine and a tracking goroutine can share the same `*Mount`.
 - **`SetTracking` and `EnableTracking` are no-ops in normal operating state.** After `HomeAndWait`, the firmware intercepts all `T`-prefix LX200 commands and silently discards them (firmware state 3, `FUN_42007394`). To stop autonomous tracking use `Stop()` or `TrackRate(0, 0)` — both clear the tracking-enable bits directly via the stop command path.
+- **No backlash arcsec *setter*.** The getters and the mode setter are here, but the `:SB…#` sub-command letters for writing a per-slot/per-axis arcsec value were never decompiled in seestar-re — only the NVS-load-time appliers are confirmed, not the LX200 dispatch that reaches them. Configure backlash via the ZWO app until that's pinned; see `RE_PROVENANCE.md`.
+- **No `Park()`.** `:GP#`/`:SP#` are only listed by address in seestar-re — the argument/response format was never decompiled. Use `Home()` (`:hC#`), which is fully confirmed.
+- **Backlash compensation is not applied to `TrackRate`/`TrackRateSY`/`SlewRate`.** The firmware only takes up gear lash on direction reversal inside the GoTo/directional-move planners (`GotoCoords`/`Slew`/`SyncPosition`'s `:MS#`). A tracker that reverses an axis via `TrackRate`/`TrackRateSY` (e.g. across the meridian) gets no firmware help — read `GetBacklashSlot1`/`GetBacklashSlot2` and inject a compensating move yourself if needed.
+
+## Command coverage
+
+Commands from `docs/esp32_firmware.md` § Full Command Map deliberately **not**
+wrapped here, and why:
+
+| Command(s) | Reason |
+|---|---|
+| `:Xa#`/`:Xb#` (raw encoder) | Superseded by `:GY#` (`EncoderPos`) |
+| `:Xc#`/`:Xd#` (direction flags) | Internal state, not meant to be user-set |
+| `:Td#`/`:Te#`, `:Qw#`/`:Qs#` | Legacy aliases of `:TO0/1#` (`EnableTracking`) and `:Qe#`/`:Qn#` (`StopRA`/`StopDec`) |
+| `:GB#`/`:Gh#`/`:GE#` (beep/elev-limit/eq-mode getters) | Never observed in use by the stock app during RE |
+| `:GM*#`/`:SM*#` combined multi-get/set (except `:SMGE#`, used by `SetLocation`) | Pure convenience over fields already exposed individually |
+| `:AA#`/`:AP#` (mode transitions) | Hardware-mode-fixed at boot (ADC-detected), not meant to be switched live |
+| `:SR#`/`:SA#`/`:SW#` | Redundant with `SetRate`/`SlewRate` and `SetTracking`+`SyncPosition` |
+| `:C…#` (motion confirm/enable/disable/reset) | Handler is inline in the ESP32 dispatch table, never decompiled — semantics unclear even in seestar-re |
+| `:SB…#` arcsec setter, `:GP#`/`:SP#` (Park) | Wire format not decompiled — see Notes above and `RE_PROVENANCE.md` |

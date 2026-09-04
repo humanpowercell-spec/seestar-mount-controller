@@ -1,8 +1,14 @@
 package mount
 
 // Focuser (EAF, /dev/eaf) and FilterWheel (/dev/pwm-gpio-misc) control.
-// Ported from the seestar-s30-re prototype 2026-09-03. The AK09915 magnetometer
-// lives in compass.go (ReadCompass / AverageCompass) — not duplicated here.
+// Ported from the retired seestar-s30-re/mount/ prototype 2026-09-03; the ioctl
+// tables below were backfilled into seestar-re proper the same day (they only
+// ever existed as Go comments before that — see RE_PROVENANCE.md). The AK09915
+// magnetometer lives in compass.go (ReadCompass / AverageCompass) — not
+// duplicated here.
+//
+// RE: seestar-re/docs/focuser.md:9-63 (hardware/motor parameters),
+// seestar-re/docs/filter_wheel.md:9-58 (hardware/GPIO allocation).
 
 import (
 	"context"
@@ -35,6 +41,9 @@ import (
 //
 // Decoded by disassembling the zwo-eaf kernel driver and confirmed by
 // live ioctl probing on hardware.
+//
+// RE: seestar-re/docs/focuser.md:65-81 (ioctl interface table, magic 'z'/0x7a),
+// :42 (microstep range 0-3040), :47-60 (kernel driver / sysfs mirror).
 
 const (
 	eafMagic = 0x7a
@@ -189,8 +198,12 @@ func (f *Focuser) eafIoctl(cmd uintptr, in eafArgs) (eafArgs, error) {
 //
 // NOTE: The step sequence (coil phase pattern for A/B per step) has not yet
 // been reverse-engineered from libasisdk.so.  The FilterWheel type below
-// implements the ioctl infrastructure but the Goto method is a stub until
-// the sequence is confirmed.  See docs/filter_wheel.md.
+// implements the ioctl infrastructure but there is no Goto(position) method
+// until the sequence is confirmed — see seestar-re/docs/filter_wheel.md's
+// "Known Unknowns" section, and RE_PROVENANCE.md for why this isn't guessed.
+//
+// RE: seestar-re/docs/filter_wheel.md:59-76 (ioctl interface table, magic
+// 'C'/0x43), :33-58 (GPIO allocation table — indices 8/9/12).
 
 const (
 	pwmMagic = 0x43
