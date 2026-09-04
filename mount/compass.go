@@ -116,7 +116,7 @@ func readCompassOnce(dev, calibPath string) (CompassReading, error) {
 
 	// Hard-iron correction: remove static bias from nearby ferrous material.
 	// Soft-iron correction: compensate for field distortion (ellipse → circle).
-	// RE: seestar-re/docs/compass_azimuth_alignment.md:60-65 (2D ellipse
+	// RE: seestar-re/docs/compass_azimuth_alignment.md:62-63 (2D ellipse
 	// correction formula, matches x11/x12/y11/y12 below exactly).
 	xc := x - calib.hardX
 	yc := y - calib.hardY
@@ -131,7 +131,7 @@ func readCompassOnce(dev, calibPath string) (CompassReading, error) {
 // loadCompassCalib parses the ZWO imager XML for msensor hard/soft-iron values.
 // Returns nil, nil when the file doesn't exist (uncalibrated is valid).
 //
-// RE: seestar-re/docs/compass_azimuth_alignment.md:66-73 (NVS key paths
+// RE: seestar-re/docs/compass_azimuth_alignment.md:68-74 (NVS key paths
 // setting2/imager/sensor_calibration/msensor/{x,y,x11,x12,y11,y12} — the XML
 // mirrors these key names as element tags).
 func loadCompassCalib(path string) (*compassCalib, error) {

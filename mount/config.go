@@ -126,7 +126,7 @@ func (m *Mount) GetHomeFlag() (bool, error) {
 //
 // RE: seestar-re/docs/esp32_firmware.md:485-486 (:FTD#/:FTE# @
 // 0x4200bb7c/0x4200bb5c), :80-86 (GPIO3/GPIO45 assignment + asymmetric
-// clear), seestar-re/docs/focuser.md:153-167 ("ESP32 commands" section, IR
+// clear), seestar-re/docs/focuser.md:175-189 ("ESP32 commands" section, IR
 // illumination hypothesis).
 func (m *Mount) SetIlluminatorLED(on bool) error {
 	if on {
