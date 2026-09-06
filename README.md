@@ -290,10 +290,14 @@ log.Printf("encoder az=%d  el=%d", azEnc, elEnc)
 | `OpenFocuser(dev string) (*Focuser, error)` | EAF telephoto focuser via `/dev/eaf` ioctls. |
 | `(Focuser).Goto(target uint32) error` / `GotoAndWait(ctx, target)` | Absolute move in microsteps (0–`MaxPos`, ~3040 on the S30). |
 | `(Focuser).Pos() / MaxPos() / IsMoving() / Halt()` | State + control. |
-| `OpenFilterWheel(dev string) (*FilterWheel, error)` | Built-in filter wheel via `/dev/pwm-gpio-misc`. GPIO/coil infrastructure only — `Step(a,b)` primitive; the full position sequence isn't reverse-engineered yet. |
+| `OpenFilterWheel(dev string) (*FilterWheel, error)` | Built-in filter wheel via `/dev/pwm-gpio-misc`. GPIO/coil infrastructure only — `Step(a,b)` primitive. Positioning (`Goto`) is closed-loop against a sensor inside `libasisdk.so` and not reimplemented. |
 | `ReadCompass() (CompassReading, error)` / `AverageCompass(n)` | AK09915 magnetometer heading (`/dev/iio:device2`, held by `zwoair_imager`). |
 | `Declination(lat, lon, t) float64` | WMM2025 magnetic declination for true-north correction. |
 | `ImagerMode(ctx, host) (ScopeMode, error)` | Probe the imager's alt-az / equatorial mode (wedge detection). |
+| `ReadPowerStatus() (PowerStatus, error)` | Battery + BQ25890 charger telemetry (capacity, voltage, current, temp, charge state, time-to-full) from `/sys/class/power_supply/`. |
+| `ReadTemperatures() ([]Temperature, error)` | SoC / battery / charger thermal zones (`/sys/class/thermal/`). |
+| `OpenBeeper(dev string) (*Beeper, error)` | Piezo buzzer (`/dev/zwo-beeper`). `Beep(freqHz, durMS, count, gapMS)` one-shot; `SetFreq`/`SetDuration`/`SetCount`/`SetInterval`/`SetDutyCycle` + `Start`/`Stop`/`Settings`/`Running`. |
+| `OpenPowerLED(dev string) (*PowerLED, error)` | Status LED (`/dev/pwrled-misc`). `WriteCommand(args...)` / `Mode(n, param...)` raw string protocol (`"3 333"`, `"13"`, …); `Status()` 7-byte readback. Mode enum is SDK-locked. |
 
 ---
 
@@ -313,7 +317,9 @@ seestar-ctrl stop
 seestar-ctrl radec
 seestar-ctrl backlash              # both slots, arcsec
 seestar-ctrl homeflag              # pollable home/DST check
-seestar-ctrl led on
+seestar-ctrl power                 # battery / charger / thermal
+seestar-ctrl beep 2500 80 2 100    # freqHz durMS count gapMS
+seestar-ctrl led 3 333             # raw /dev/pwrled-misc command
 seestar-ctrl raw ':GU#'
 ```
 

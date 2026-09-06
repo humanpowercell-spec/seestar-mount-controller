@@ -81,6 +81,65 @@ func main() {
 		return
 	}
 
+	if args[0] == "power" {
+		p, err := mount.ReadPowerStatus()
+		check(err)
+		fmt.Printf("battery   %d%% (%s)  %s  %.2fV  %+.2fA  %.1f°C\n",
+			p.CapacityPct, p.CapacityLevel, p.Status, p.VoltageV, p.CurrentA, p.TempC)
+		if p.TimeToFull >= 0 {
+			fmt.Printf("          time to full: %dm\n", p.TimeToFull/60)
+		}
+		vbus := "absent"
+		if p.VBUSPresent {
+			vbus = fmt.Sprintf("%.2fV %s, charging at %.2fA (input limit %.2fA)",
+				p.VBUSVoltageV, p.ChargeType, p.ChargeCurrentA, p.InputLimitA)
+		}
+		fmt.Printf("charger   VBUS %s\n", vbus)
+		temps, _ := mount.ReadTemperatures()
+		for _, t := range temps {
+			fmt.Printf("temp      %-18s %.1f°C\n", t.Type, t.C)
+		}
+		return
+	}
+
+	if args[0] == "beep" {
+		b, err := mount.OpenBeeper("")
+		check(err)
+		defer b.Close()
+		// beep [freqHz] [durationMS] [count] [intervalMS]
+		freq, dur, cnt, iv := 2000, 120, 2, 80
+		if len(args) > 1 {
+			freq = atoiOr(args[1], freq)
+		}
+		if len(args) > 2 {
+			dur = atoiOr(args[2], dur)
+		}
+		if len(args) > 3 {
+			cnt = atoiOr(args[3], cnt)
+		}
+		if len(args) > 4 {
+			iv = atoiOr(args[4], iv)
+		}
+		check(b.Beep(freq, dur, cnt, iv))
+		fmt.Printf("beep: %dHz ×%d, %dms on / %dms gap\n", freq, cnt, dur, iv)
+		return
+	}
+
+	if args[0] == "led" {
+		l, err := mount.OpenPowerLED("")
+		check(err)
+		defer l.Close()
+		if len(args) < 2 {
+			s, err := l.Status()
+			check(err)
+			fmt.Printf("pwrled status: %q\n", s)
+			return
+		}
+		check(l.WriteCommand(args[1:]...))
+		fmt.Printf("pwrled <- %q\n", strings.Join(args[1:], " "))
+		return
+	}
+
 	m, err := mount.Open(*dev)
 	if err != nil {
 		fatalf("open: %v", err)
@@ -321,8 +380,8 @@ func main() {
 		check(err)
 		fmt.Printf("%q (raw :GBu# reply — handler not decompiled, meaning unconfirmed)\n", s)
 
-	case "led":
-		requireArgs(args, 2, "led <on|off>")
+	case "irled":
+		requireArgs(args, 2, "irled <on|off>")
 		switch strings.ToLower(args[1]) {
 		case "on":
 			check(m.SetIlluminatorLED(true))
@@ -349,6 +408,9 @@ func usage() {
   probe                         Check for Seestar S30 hardware indicators (no port needed)
   compass [--avg N]             Read AK09915 magnetometer heading (stop zwoair_imager first)
   declination <lat> <lon>       Compute WMM2025 magnetic declination at lat/lon (degrees)
+  power                         Battery / charger / thermal telemetry (sysfs, no port needed)
+  beep [freqHz] [durMS] [count] [gapMS]   Buzzer (/dev/zwo-beeper); defaults 2000 120 2 80
+  led [cmd...]                  /dev/pwrled-misc status LED: no args = read status; args = raw command (led 3 333, led 13)
   slew <e|w|n|s> <1-9>         Preset-rate slew
   slewrate <e|w|n|s> <deg/s>   Variable-rate continuous slew (requires firmware >= V1.1.9)
   setrate <ra|dec> <deg/s>     Set per-axis rate for pulsemove (ZWO :Rv extension)
@@ -379,7 +441,7 @@ func usage() {
   homeflag                      Read home/DST flag (:GH#) — pollable any time
   backlash                      Read both backlash slots, arcsec (:GBGR/D#, :GBZR/D#)
   backlashmode [0-2]            Get (:GBu#) or set (:SBu{n}#) backlash mode — effect unconfirmed
-  led <on|off>                  ESP32 IR illuminator LED (:FTE#/:FTD#) — not the EAF focuser
+  irled <on|off>                ESP32 IR illuminator LED (:FTE#/:FTD#) — not the EAF focuser, not the status LED
   raw <:CMD#>                   Send raw LX200 command, print reply
 `)
 }
@@ -400,6 +462,13 @@ func requireArgs(args []string, n int, usage string) {
 	if len(args) < n {
 		fatalf("usage: %s", usage)
 	}
+}
+
+func atoiOr(s string, def int) int {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return def
 }
 
 func fatalf(f string, a ...any) {

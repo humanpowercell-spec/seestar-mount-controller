@@ -42,6 +42,15 @@ implemented here on a guess.** Two examples currently blocked on this (see
 - `Park()` / `GetParkPosition()` — `:GP#`/`:SP#` (`0x420084c8`/`0x42008e80`) are
   only listed by address in `docs/esp32_firmware.md`; the argument/response
   format was never decompiled.
+- `FilterWheel.Goto(position)` — the coil ioctl primitives are here, but
+  positioning is closed-loop against a sensor inside `libasisdk.so`
+  (`EFW*` "sample analysis" / "threshold" — `docs/peripherals.md`,
+  `docs/filter_wheel.md`). Same proprietary-SDK class as the camera; not
+  reimplemented.
+- `PowerLED` mode *enum* — the raw `/dev/pwrled-misc` string protocol is here
+  (`mount/led.go`), but the logical mode→pattern map lives in `libasisdk.so`
+  (`ASI_POWERLED_SetMode`, `docs/peripherals.md`); only a couple of raw strings
+  are known.
 
 When you hit one of these, RE it in seestar-re first (decompile the handler,
 add it to the command table with its wire format), cite that, then implement
@@ -50,8 +59,8 @@ here. Don't skip straight to the Go.
 ## Pinning
 
 Citations in this repo were written against **seestar-re commit
-[`bbfcc79`](https://github.com/humanpowercell-spec/seestar-re/commit/bbfcc79)**
-(2026-09-04). seestar-re's own docs get corrected and expanded over time — if a
+[`f1b349d`](https://github.com/humanpowercell-spec/seestar-re/commit/f1b349d)**
+(2026-09-06). seestar-re's own docs get corrected and expanded over time — if a
 cited line number looks wrong, `grep` the anchor token in the current seestar-re
 checkout; it hasn't moved even when the line has. If you re-verify a citation
 against a newer seestar-re commit, bump the pin above.
